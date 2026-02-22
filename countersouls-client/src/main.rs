@@ -67,6 +67,7 @@ struct ClientApp {
     status: String,
     connected: bool,
     own_count: u64,
+    server_addr_focused: bool,
     event_rx: mpsc::Receiver<WorkerEvent>,
     event_tx: mpsc::Sender<WorkerEvent>,
     command_tx: Option<tokio_mpsc::UnboundedSender<WorkerCommand>>,
@@ -81,6 +82,7 @@ impl ClientApp {
             status: "Disconnected".to_string(),
             connected: false,
             own_count: 0,
+            server_addr_focused: false,
             event_rx,
             event_tx,
             command_tx: None,
@@ -182,7 +184,11 @@ impl eframe::App for ClientApp {
                 }
             });
             ui.label("Server address and port");
-            ui.text_edit_singleline(&mut self.config.server_addr);
+            let server_addr_response = ui.add(
+                egui::TextEdit::singleline(&mut self.config.server_addr)
+                    .password(!self.server_addr_focused),
+            );
+            self.server_addr_focused = server_addr_response.has_focus();
             ui.label("Password");
             ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
             ui.label("Directory for other clients' death files");
