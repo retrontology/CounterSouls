@@ -24,7 +24,7 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 #[derive(Parser, Debug, Clone)]
 #[command(name = "countersouls-server")]
 struct Args {
-    #[arg(long, default_value = "./deaths/")]
+    #[arg(long, default_value = "./deaths-server/")]
     data_dir: PathBuf,
     #[arg(long)]
     password: String,

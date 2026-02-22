@@ -29,7 +29,7 @@ struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            data_dir: "./deaths/".to_string(),
+            data_dir: "./deaths-server/".to_string(),
             password: String::new(),
             bind: "0.0.0.0:3721".to_string(),
         }

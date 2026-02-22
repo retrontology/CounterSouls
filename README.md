@@ -27,14 +27,14 @@ cargo build
 cargo run -p countersouls-server -- \
   --password "change-me" \
   --bind "0.0.0.0:3721" \
-  --data-dir "./deaths/"
+  --data-dir "./deaths-server/"
 ```
 
 Server options:
 
 - `--password` (required): shared secret clients must provide
 - `--bind` (optional, default: `0.0.0.0:3721`)
-- `--data-dir` (optional, default: `./deaths/`)
+- `--data-dir` (optional, default: `./deaths-server/`)
 
 ### 2) Start a client
 
