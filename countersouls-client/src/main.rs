@@ -31,7 +31,8 @@ fn main() -> eframe::Result<()> {
 struct ClientConfig {
     name: String,
     input_file: String,
-    server_addr: String,
+    address: String,
+    port: String,
     password: String,
     output_dir: String,
 }
@@ -41,7 +42,8 @@ impl Default for ClientConfig {
         Self {
             name: String::new(),
             input_file: String::new(),
-            server_addr: "127.0.0.1:3721".to_string(),
+            address: "127.0.0.1".to_string(),
+            port: "3721".to_string(),
             password: String::new(),
             output_dir: "./deaths/".to_string(),
         }
@@ -67,7 +69,7 @@ struct ClientApp {
     status: String,
     connected: bool,
     own_count: u64,
-    server_addr_focused: bool,
+    address_focused: bool,
     event_rx: mpsc::Receiver<WorkerEvent>,
     event_tx: mpsc::Sender<WorkerEvent>,
     command_tx: Option<tokio_mpsc::UnboundedSender<WorkerCommand>>,
@@ -82,7 +84,7 @@ impl ClientApp {
             status: "Disconnected".to_string(),
             connected: false,
             own_count: 0,
-            server_addr_focused: false,
+            address_focused: false,
             event_rx,
             event_tx,
             command_tx: None,
@@ -91,6 +93,18 @@ impl ClientApp {
 
     fn connect(&mut self) {
         if self.connected || self.command_tx.is_some() {
+            return;
+        }
+        if self.config.address.trim().is_empty() {
+            self.status = "Address is required".to_string();
+            return;
+        }
+        if self.config.port.trim().is_empty() {
+            self.status = "Port is required".to_string();
+            return;
+        }
+        if self.config.port.parse::<u16>().is_err() {
+            self.status = "Port must be a number between 0 and 65535".to_string();
             return;
         }
         let cfg = self.config.clone();
@@ -183,12 +197,14 @@ impl eframe::App for ClientApp {
                     self.browse_input_file();
                 }
             });
-            ui.label("Server address and port");
-            let server_addr_response = ui.add(
-                egui::TextEdit::singleline(&mut self.config.server_addr)
-                    .password(!self.server_addr_focused),
+            ui.label("Server address");
+            let address_response = ui.add(
+                egui::TextEdit::singleline(&mut self.config.address)
+                    .password(!self.address_focused),
             );
-            self.server_addr_focused = server_addr_response.has_focus();
+            self.address_focused = address_response.has_focus();
+            ui.label("Server port");
+            ui.text_edit_singleline(&mut self.config.port);
             ui.label("Password");
             ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
             ui.label("Directory for other clients' death files");
@@ -235,12 +251,12 @@ async fn run_connection(
     fs::create_dir_all(&config.output_dir)
         .with_context(|| format!("failed to create output dir {}", config.output_dir))?;
 
-    let ws_url =
-        if config.server_addr.starts_with("ws://") || config.server_addr.starts_with("wss://") {
-            config.server_addr.clone()
-        } else {
-            format!("ws://{}", config.server_addr)
-        };
+    let server_addr = compose_server_addr(&config);
+    let ws_url = if server_addr.starts_with("ws://") || server_addr.starts_with("wss://") {
+        server_addr
+    } else {
+        format!("ws://{server_addr}")
+    };
 
     let (ws_stream, _) = connect_async(&ws_url)
         .await
@@ -408,6 +424,10 @@ fn sanitize_name(name: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+fn compose_server_addr(config: &ClientConfig) -> String {
+    format!("{}:{}", config.address.trim(), config.port.trim())
 }
 
 fn config_path() -> Result<PathBuf> {

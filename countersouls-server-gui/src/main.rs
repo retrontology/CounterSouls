@@ -32,7 +32,8 @@ fn main() -> eframe::Result<()> {
 struct ServerConfig {
     data_dir: String,
     password: String,
-    bind: String,
+    address: String,
+    port: String,
 }
 
 impl Default for ServerConfig {
@@ -40,7 +41,8 @@ impl Default for ServerConfig {
         Self {
             data_dir: "./deaths-server/".to_string(),
             password: String::new(),
-            bind: "0.0.0.0:3721".to_string(),
+            address: "0.0.0.0".to_string(),
+            port: "3721".to_string(),
         }
     }
 }
@@ -50,17 +52,18 @@ struct ServerGuiApp {
     status: String,
     child: Option<Child>,
     password_focused: bool,
-    bind_focused: bool,
+    address_focused: bool,
 }
 
 impl ServerGuiApp {
     fn new() -> Self {
+        let config = load_config().unwrap_or_default();
         Self {
-            config: load_config().unwrap_or_default(),
+            config,
             status: "Stopped".to_string(),
             child: None,
             password_focused: false,
-            bind_focused: false,
+            address_focused: false,
         }
     }
 
@@ -70,6 +73,18 @@ impl ServerGuiApp {
         }
         if self.config.password.trim().is_empty() {
             self.status = "Password is required".to_string();
+            return;
+        }
+        if self.config.address.trim().is_empty() {
+            self.status = "Address is required".to_string();
+            return;
+        }
+        if self.config.port.trim().is_empty() {
+            self.status = "Port is required".to_string();
+            return;
+        }
+        if self.config.port.parse::<u16>().is_err() {
+            self.status = "Port must be a number between 0 and 65535".to_string();
             return;
         }
 
@@ -157,11 +172,14 @@ impl eframe::App for ServerGuiApp {
                     .password(!self.password_focused),
             );
             self.password_focused = password_response.has_focus();
-            ui.label("Bind address and port");
-            let bind_response = ui.add(
-                egui::TextEdit::singleline(&mut self.config.bind).password(!self.bind_focused),
+            ui.label("Address");
+            let address_response = ui.add(
+                egui::TextEdit::singleline(&mut self.config.address)
+                    .password(!self.address_focused),
             );
-            self.bind_focused = bind_response.has_focus();
+            self.address_focused = address_response.has_focus();
+            ui.label("Port");
+            ui.text_edit_singleline(&mut self.config.port);
 
             ui.horizontal(|ui| {
                 if ui.button("Save Config").clicked() {
@@ -200,16 +218,21 @@ fn sibling_server_binary_path() -> Option<PathBuf> {
 }
 
 fn configure_server_command(cmd: &mut Command, config: &ServerConfig) {
+    let bind = compose_bind(config);
     cmd.arg("--data-dir")
         .arg(&config.data_dir)
         .arg("--password")
         .arg(&config.password)
         .arg("--bind")
-        .arg(&config.bind)
+        .arg(bind)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+fn compose_bind(config: &ServerConfig) -> String {
+    format!("{}:{}", config.address.trim(), config.port.trim())
 }
 
 fn config_path() -> Result<PathBuf> {
