@@ -19,7 +19,13 @@ use tokio::{sync::mpsc as tokio_mpsc, time::interval};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions::default();
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([500.0, 360.0])
+            .with_resizable(false),
+        persist_window: false,
+        ..Default::default()
+    };
     eframe::run_native(
         "CounterSouls Client",
         options,

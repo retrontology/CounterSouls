@@ -20,7 +20,13 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions::default();
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([430.0, 250.0])
+            .with_resizable(false),
+        persist_window: false,
+        ..Default::default()
+    };
     eframe::run_native(
         "CounterSouls Server GUI",
         options,
