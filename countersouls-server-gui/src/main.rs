@@ -41,6 +41,8 @@ struct ServerGuiApp {
     config: ServerConfig,
     status: String,
     child: Option<Child>,
+    password_focused: bool,
+    bind_focused: bool,
 }
 
 impl ServerGuiApp {
@@ -49,6 +51,8 @@ impl ServerGuiApp {
             config: load_config().unwrap_or_default(),
             status: "Stopped".to_string(),
             child: None,
+            password_focused: false,
+            bind_focused: false,
         }
     }
 
@@ -140,9 +144,16 @@ impl eframe::App for ServerGuiApp {
                 }
             });
             ui.label("Password");
-            ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
+            let password_response = ui.add(
+                egui::TextEdit::singleline(&mut self.config.password)
+                    .password(!self.password_focused),
+            );
+            self.password_focused = password_response.has_focus();
             ui.label("Bind address and port");
-            ui.add(egui::TextEdit::singleline(&mut self.config.bind).password(true));
+            let bind_response = ui.add(
+                egui::TextEdit::singleline(&mut self.config.bind).password(!self.bind_focused),
+            );
+            self.bind_focused = bind_response.has_focus();
 
             ui.horizontal(|ui| {
                 if ui.button("Save Config").clicked() {
