@@ -60,6 +60,7 @@ async fn websocket_smoke_test() -> Result<()> {
 
     let (mut alice_ws_2, _) = connect_and_auth(&ws_url, "alice").await?;
     send_client_msg(&mut alice_ws_2, &ClientMessage::Update { count: 9 }).await?;
+    expect_update_for(&mut bob_ws, "alice", 9).await?;
 
     send_client_msg(&mut bob_ws, &ClientMessage::RequestAll).await?;
     let counts = expect_all_counts(&mut bob_ws).await?;
