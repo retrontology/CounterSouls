@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "countersouls-protocol",
+    "countersouls-server",
+    "countersouls-client",
+    "countersouls-server-gui",
+]
+resolver = "2"

@@ -1,0 +1,100 @@
+name: Release Build
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build and upload (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_name: countersouls-windows-amd64.zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_name: countersouls-linux-amd64.tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            archive_name: countersouls-linux-arm64.tar.gz
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo files
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cross for Linux ARM64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build release binary (cargo)
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            -p countersouls-server \
+            -p countersouls-client \
+            -p countersouls-server-gui
+
+      - name: Build release binary (cross)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          cross build --release --target ${{ matrix.target }} \
+            -p countersouls-server \
+            -p countersouls-client \
+            -p countersouls-server-gui
+
+      - name: Package platform archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $releaseDir = "target/${{ matrix.target }}/release"
+          $bundleDir = "dist/countersouls"
+          New-Item -ItemType Directory -Path $bundleDir -Force | Out-Null
+
+          Copy-Item "$releaseDir/countersouls-server.exe" "$bundleDir/countersouls-server.exe"
+          Copy-Item "$releaseDir/countersouls-client.exe" "$bundleDir/countersouls-client.exe"
+          Copy-Item "$releaseDir/countersouls-server-gui.exe" "$bundleDir/countersouls-server-gui.exe"
+
+          # Include runtime DLLs produced by the build (if any).
+          Get-ChildItem "$releaseDir/*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "$bundleDir/$($_.Name)"
+          }
+
+          Compress-Archive -Path "$bundleDir/*" -DestinationPath "${{ matrix.archive_name }}" -Force
+
+      - name: Package platform archive (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          release_dir="target/${{ matrix.target }}/release"
+          bundle_dir="dist/countersouls"
+          mkdir -p "${bundle_dir}"
+
+          cp "${release_dir}/countersouls-server" "${bundle_dir}/countersouls-server"
+          cp "${release_dir}/countersouls-client" "${bundle_dir}/countersouls-client"
+          cp "${release_dir}/countersouls-server-gui" "${bundle_dir}/countersouls-server-gui"
+
+          # Include runtime shared libraries produced by the build (if any).
+          cp "${release_dir}"/*.so* "${bundle_dir}/" 2>/dev/null || true
+
+          tar -C dist -czf "${{ matrix.archive_name }}" "countersouls"
+
+      - name: Upload archive to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.archive_name }}
