@@ -142,6 +142,9 @@ impl ServerGuiApp {
     fn browse_data_dir(&mut self) {
         if let Some(path) = FileDialog::new().pick_folder() {
             self.config.data_dir = path.display().to_string();
+            if let Err(err) = save_config(&self.config) {
+                self.status = format!("Failed to save config: {err}");
+            }
         }
     }
 }
@@ -161,7 +164,19 @@ impl eframe::App for ServerGuiApp {
 
             ui.label("Data directory");
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.config.data_dir);
+                let data_dir_response = ui.text_edit_singleline(&mut self.config.data_dir);
+                let data_dir_enter_pressed =
+                    data_dir_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if data_dir_enter_pressed {
+                    data_dir_response.surrender_focus();
+                }
+                if data_dir_response.changed()
+                    && (data_dir_response.lost_focus() || data_dir_enter_pressed)
+                {
+                    if let Err(err) = save_config(&self.config) {
+                        self.status = format!("Failed to save config: {err}");
+                    }
+                }
                 if ui.button("Browse...").clicked() {
                     self.browse_data_dir();
                 }
@@ -171,24 +186,51 @@ impl eframe::App for ServerGuiApp {
                 egui::TextEdit::singleline(&mut self.config.password)
                     .password(!self.password_focused),
             );
+            let password_enter_pressed =
+                password_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if password_enter_pressed {
+                password_response.surrender_focus();
+            }
+            if password_response.changed()
+                && (password_response.lost_focus() || password_enter_pressed)
+            {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Failed to save config: {err}");
+                }
+            }
             self.password_focused = password_response.has_focus();
             ui.label("Address");
             let address_response = ui.add(
                 egui::TextEdit::singleline(&mut self.config.address)
                     .password(!self.address_focused),
             );
+            let address_enter_pressed =
+                address_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if address_enter_pressed {
+                address_response.surrender_focus();
+            }
+            if address_response.changed()
+                && (address_response.lost_focus() || address_enter_pressed)
+            {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Failed to save config: {err}");
+                }
+            }
             self.address_focused = address_response.has_focus();
             ui.label("Port");
-            ui.text_edit_singleline(&mut self.config.port);
+            let port_response = ui.text_edit_singleline(&mut self.config.port);
+            let port_enter_pressed =
+                port_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if port_enter_pressed {
+                port_response.surrender_focus();
+            }
+            if port_response.changed() && (port_response.lost_focus() || port_enter_pressed) {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Failed to save config: {err}");
+                }
+            }
 
             ui.horizontal(|ui| {
-                if ui.button("Save Config").clicked() {
-                    match save_config(&self.config) {
-                        Ok(()) => self.status = "Config saved".to_string(),
-                        Err(err) => self.status = format!("Failed to save config: {err}"),
-                    }
-                }
-
                 if self.child.is_none() {
                     if ui.button("Start Server").clicked() {
                         self.start_server();

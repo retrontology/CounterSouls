@@ -150,12 +150,18 @@ impl ClientApp {
     fn browse_input_file(&mut self) {
         if let Some(path) = FileDialog::new().pick_file() {
             self.config.input_file = path.display().to_string();
+            if let Err(err) = save_config(&self.config) {
+                self.status = format!("Error saving config: {err}");
+            }
         }
     }
 
     fn browse_output_dir(&mut self) {
         if let Some(path) = FileDialog::new().pick_folder() {
             self.config.output_dir = path.display().to_string();
+            if let Err(err) = save_config(&self.config) {
+                self.status = format!("Error saving config: {err}");
+            }
         }
     }
 }
@@ -189,10 +195,32 @@ impl eframe::App for ClientApp {
             ui.separator();
 
             ui.label("Name");
-            ui.text_edit_singleline(&mut self.config.name);
+            let name_response = ui.text_edit_singleline(&mut self.config.name);
+            let name_enter_pressed =
+                name_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if name_enter_pressed {
+                name_response.surrender_focus();
+            }
+            if name_response.changed() && (name_response.lost_focus() || name_enter_pressed) {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Error saving config: {err}");
+                }
+            }
             ui.label("Death count input file (read-only watched file)");
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.config.input_file);
+                let input_file_response = ui.text_edit_singleline(&mut self.config.input_file);
+                let input_file_enter_pressed = input_file_response.has_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if input_file_enter_pressed {
+                    input_file_response.surrender_focus();
+                }
+                if input_file_response.changed()
+                    && (input_file_response.lost_focus() || input_file_enter_pressed)
+                {
+                    if let Err(err) = save_config(&self.config) {
+                        self.status = format!("Error saving config: {err}");
+                    }
+                }
                 if ui.button("Browse...").clicked() {
                     self.browse_input_file();
                 }
@@ -202,28 +230,67 @@ impl eframe::App for ClientApp {
                 egui::TextEdit::singleline(&mut self.config.address)
                     .password(!self.address_focused),
             );
+            let address_enter_pressed =
+                address_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if address_enter_pressed {
+                address_response.surrender_focus();
+            }
+            if address_response.changed()
+                && (address_response.lost_focus() || address_enter_pressed)
+            {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Error saving config: {err}");
+                }
+            }
             self.address_focused = address_response.has_focus();
             ui.label("Server port");
-            ui.text_edit_singleline(&mut self.config.port);
+            let port_response = ui.text_edit_singleline(&mut self.config.port);
+            let port_enter_pressed =
+                port_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if port_enter_pressed {
+                port_response.surrender_focus();
+            }
+            if port_response.changed() && (port_response.lost_focus() || port_enter_pressed) {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Error saving config: {err}");
+                }
+            }
             ui.label("Password");
-            ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
+            let password_response =
+                ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
+            let password_enter_pressed =
+                password_response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if password_enter_pressed {
+                password_response.surrender_focus();
+            }
+            if password_response.changed()
+                && (password_response.lost_focus() || password_enter_pressed)
+            {
+                if let Err(err) = save_config(&self.config) {
+                    self.status = format!("Error saving config: {err}");
+                }
+            }
             ui.label("Directory for other clients' death files");
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.config.output_dir);
+                let output_dir_response = ui.text_edit_singleline(&mut self.config.output_dir);
+                let output_dir_enter_pressed = output_dir_response.has_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if output_dir_enter_pressed {
+                    output_dir_response.surrender_focus();
+                }
+                if output_dir_response.changed()
+                    && (output_dir_response.lost_focus() || output_dir_enter_pressed)
+                {
+                    if let Err(err) = save_config(&self.config) {
+                        self.status = format!("Error saving config: {err}");
+                    }
+                }
                 if ui.button("Browse...").clicked() {
                     self.browse_output_dir();
                 }
             });
 
             ui.horizontal(|ui| {
-                if ui.button("Save Config").clicked() {
-                    if let Err(err) = save_config(&self.config) {
-                        self.status = format!("Error saving config: {err}");
-                    } else {
-                        self.status = "Config saved".to_string();
-                    }
-                }
-
                 if !self.connected {
                     if ui.button("Connect").clicked() {
                         self.connect();
