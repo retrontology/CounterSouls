@@ -248,6 +248,46 @@ async fn run_connection(
     mut cmd_rx: tokio_mpsc::UnboundedReceiver<WorkerCommand>,
     event_tx: mpsc::Sender<WorkerEvent>,
 ) -> Result<()> {
+    const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
+    const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
+
+    let mut retry_delay = INITIAL_RETRY_DELAY;
+    loop {
+        match run_connection_session(&config, &mut cmd_rx, &event_tx).await {
+            Ok(ConnectionSessionEnd::DisconnectRequested) => break,
+            Err(err) => {
+                let err_text = format!("{err:#}");
+                if err_text.contains("auth failed:") {
+                    return Err(err);
+                }
+
+                let _ = event_tx.send(WorkerEvent::Connected(false));
+                let _ = event_tx.send(WorkerEvent::Status(format!(
+                    "Connection lost. Retrying in {}s...",
+                    retry_delay.as_secs()
+                )));
+
+                if !wait_for_retry_or_disconnect(retry_delay, &mut cmd_rx, &event_tx).await {
+                    break;
+                }
+
+                retry_delay = std::cmp::min(retry_delay.saturating_mul(2), MAX_RETRY_DELAY);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+enum ConnectionSessionEnd {
+    DisconnectRequested,
+}
+
+async fn run_connection_session(
+    config: &ClientConfig,
+    cmd_rx: &mut tokio_mpsc::UnboundedReceiver<WorkerCommand>,
+    event_tx: &mpsc::Sender<WorkerEvent>,
+) -> Result<ConnectionSessionEnd> {
     fs::create_dir_all(&config.output_dir)
         .with_context(|| format!("failed to create output dir {}", config.output_dir))?;
 
@@ -307,9 +347,15 @@ async fn run_connection(
         tokio::select! {
             maybe_cmd = cmd_rx.recv() => {
                 match maybe_cmd {
-                    Some(WorkerCommand::Disconnect) | None => break,
+                    Some(WorkerCommand::Disconnect) | None => return Ok(ConnectionSessionEnd::DisconnectRequested),
                     Some(WorkerCommand::Refresh) => {
-                        let count = read_single_line_count(Path::new(&config.input_file))?;
+                        let count = match read_single_line_count(Path::new(&config.input_file)) {
+                            Ok(count) => count,
+                            Err(err) => {
+                                let _ = event_tx.send(WorkerEvent::Error(format!("failed to read input count: {err}")));
+                                continue;
+                            }
+                        };
                         let _ = event_tx.send(WorkerEvent::OwnCount(count));
                         send_client_message(&mut ws_writer, &ClientMessage::Update { count }).await?;
                         send_client_message(&mut ws_writer, &ClientMessage::RequestAll).await?;
@@ -319,7 +365,7 @@ async fn run_connection(
             maybe_frame = ws_reader.next() => {
                 let frame = match maybe_frame {
                     Some(frame) => frame?,
-                    None => break,
+                    None => return Err(anyhow::anyhow!("server closed websocket connection")),
                 };
                 match parse_server_message(frame)? {
                     ServerMessage::AuthOk => {}
@@ -364,8 +410,29 @@ async fn run_connection(
             }
         }
     }
+}
 
-    Ok(())
+async fn wait_for_retry_or_disconnect(
+    delay: Duration,
+    cmd_rx: &mut tokio_mpsc::UnboundedReceiver<WorkerCommand>,
+    event_tx: &mpsc::Sender<WorkerEvent>,
+) -> bool {
+    let sleep = tokio::time::sleep(delay);
+    tokio::pin!(sleep);
+
+    loop {
+        tokio::select! {
+            _ = &mut sleep => return true,
+            maybe_cmd = cmd_rx.recv() => {
+                match maybe_cmd {
+                    Some(WorkerCommand::Disconnect) | None => return false,
+                    Some(WorkerCommand::Refresh) => {
+                        let _ = event_tx.send(WorkerEvent::Status("Disconnected - waiting to reconnect...".to_string()));
+                    }
+                }
+            }
+        }
+    }
 }
 
 async fn send_client_message<S>(writer: &mut S, msg: &ClientMessage) -> Result<()>
