@@ -85,14 +85,6 @@ async fn handle_connection(stream: TcpStream, state: Arc<State>, args: Args) -> 
     let (server_tx, mut server_rx) = unbounded_channel::<ServerMessage>();
     let client_id = state.next_id.fetch_add(1, Ordering::Relaxed);
 
-    {
-        let mut clients = state.clients.write().await;
-        clients.push(ClientHandle {
-            id: client_id,
-            tx: server_tx.clone(),
-        });
-    }
-
     let writer_task = tokio::spawn(async move {
         while let Some(outgoing) = server_rx.recv().await {
             let raw = serde_json::to_string(&outgoing)?;
@@ -133,6 +125,14 @@ async fn handle_connection(stream: TcpStream, state: Arc<State>, args: Args) -> 
             return Ok(());
         }
     };
+
+    {
+        let mut clients = state.clients.write().await;
+        clients.push(ClientHandle {
+            id: client_id,
+            tx: server_tx.clone(),
+        });
+    }
 
     let _ = server_tx.send(ServerMessage::AuthOk);
 
@@ -239,7 +239,14 @@ async fn load_counts(dir: &Path) -> Result<HashMap<String, u64>> {
         if !file_type.is_file() {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().to_string();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if file_name.is_empty() {
+            continue;
+        }
+        let name = file_name
+            .strip_suffix(".txt")
+            .unwrap_or(file_name.as_str())
+            .to_string();
         if name.is_empty() {
             continue;
         }
@@ -259,8 +266,8 @@ async fn write_count_file(dir: &Path, name: &str, count: u64) -> Result<()> {
     fs::create_dir_all(dir)
         .await
         .with_context(|| format!("failed to create data dir {}", dir.display()))?;
-    let sanitized = sanitize_name(name);
-    let path = dir.join(sanitized);
+    let file_name = format!("{}.txt", sanitize_name(name));
+    let path = dir.join(file_name);
     let data = format!("{count}\n");
     fs::write(path, data).await?;
     Ok(())
