@@ -18,6 +18,7 @@ use tokio::{
         RwLock,
         mpsc::{UnboundedSender, unbounded_channel},
     },
+    time::interval,
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
@@ -35,7 +36,14 @@ struct Args {
 #[derive(Clone)]
 struct ClientHandle {
     id: u64,
-    tx: UnboundedSender<ServerMessage>,
+    tx: UnboundedSender<OutgoingFrame>,
+}
+
+#[derive(Clone)]
+enum OutgoingFrame {
+    App(ServerMessage),
+    Ping,
+    Pong(Vec<u8>),
 }
 
 #[derive(Default)]
@@ -78,17 +86,29 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_connection(stream: TcpStream, state: Arc<State>, args: Args) -> Result<()> {
+    const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+
     let ws = accept_async(stream)
         .await
         .context("websocket handshake failed")?;
     let (mut ws_writer, mut ws_reader) = ws.split();
-    let (server_tx, mut server_rx) = unbounded_channel::<ServerMessage>();
+    let (server_tx, mut server_rx) = unbounded_channel::<OutgoingFrame>();
     let client_id = state.next_id.fetch_add(1, Ordering::Relaxed);
 
     let writer_task = tokio::spawn(async move {
         while let Some(outgoing) = server_rx.recv().await {
-            let raw = serde_json::to_string(&outgoing)?;
-            ws_writer.send(Message::Text(raw.into())).await?;
+            match outgoing {
+                OutgoingFrame::App(msg) => {
+                    let raw = serde_json::to_string(&msg)?;
+                    ws_writer.send(Message::Text(raw.into())).await?;
+                }
+                OutgoingFrame::Ping => {
+                    ws_writer.send(Message::Ping(Vec::new().into())).await?;
+                }
+                OutgoingFrame::Pong(payload) => {
+                    ws_writer.send(Message::Pong(payload.into())).await?;
+                }
+            }
         }
         Result::<()>::Ok(())
     });
@@ -101,26 +121,26 @@ async fn handle_connection(stream: TcpStream, state: Arc<State>, args: Args) -> 
     let client_name = match auth {
         ClientMessage::Auth { password, name } => {
             if password != args.password {
-                let _ = server_tx.send(ServerMessage::AuthError {
+                let _ = server_tx.send(OutgoingFrame::App(ServerMessage::AuthError {
                     reason: "invalid password".to_string(),
-                });
+                }));
                 remove_client(&state, client_id).await;
                 return Ok(());
             }
             let trimmed = name.trim();
             if trimmed.is_empty() {
-                let _ = server_tx.send(ServerMessage::AuthError {
+                let _ = server_tx.send(OutgoingFrame::App(ServerMessage::AuthError {
                     reason: "name must not be empty".to_string(),
-                });
+                }));
                 remove_client(&state, client_id).await;
                 return Ok(());
             }
             trimmed.to_string()
         }
         _ => {
-            let _ = server_tx.send(ServerMessage::AuthError {
+            let _ = server_tx.send(OutgoingFrame::App(ServerMessage::AuthError {
                 reason: "expected auth as first message".to_string(),
-            });
+            }));
             remove_client(&state, client_id).await;
             return Ok(());
         }
@@ -134,11 +154,11 @@ async fn handle_connection(stream: TcpStream, state: Arc<State>, args: Args) -> 
         });
     }
 
-    let _ = server_tx.send(ServerMessage::AuthOk);
+    let _ = server_tx.send(OutgoingFrame::App(ServerMessage::AuthOk));
 
     let current = ensure_client_entry(&state, &args.data_dir, &client_name).await?;
     let snapshot = snapshot_counts(&state).await;
-    let _ = server_tx.send(ServerMessage::All { counts: snapshot });
+    let _ = server_tx.send(OutgoingFrame::App(ServerMessage::All { counts: snapshot }));
     broadcast_except(
         &state,
         client_id,
@@ -149,26 +169,49 @@ async fn handle_connection(stream: TcpStream, state: Arc<State>, args: Args) -> 
     )
     .await;
 
-    while let Some(incoming) = ws_reader.next().await {
-        let msg = incoming?;
-        let parsed = parse_client_message(msg)?;
-        match parsed {
-            ClientMessage::Auth { .. } => {}
-            ClientMessage::Update { count } => {
-                set_count(&state, &args.data_dir, &client_name, count).await?;
-                broadcast_except(
-                    &state,
-                    client_id,
-                    &ServerMessage::Update {
-                        name: client_name.clone(),
-                        count,
-                    },
-                )
-                .await;
+    let mut heartbeat_tick = interval(HEARTBEAT_INTERVAL);
+    loop {
+        tokio::select! {
+            _ = heartbeat_tick.tick() => {
+                if server_tx.send(OutgoingFrame::Ping).is_err() {
+                    break;
+                }
             }
-            ClientMessage::RequestAll => {
-                let snapshot = snapshot_counts(&state).await;
-                let _ = server_tx.send(ServerMessage::All { counts: snapshot });
+            maybe_incoming = ws_reader.next() => {
+                let msg = match maybe_incoming {
+                    Some(incoming) => incoming?,
+                    None => break,
+                };
+                match msg {
+                    Message::Ping(payload) => {
+                        let _ = server_tx.send(OutgoingFrame::Pong(payload.to_vec()));
+                    }
+                    Message::Pong(_) => {}
+                    Message::Close(_) => break,
+                    Message::Text(_) | Message::Binary(_) => {
+                        let parsed = parse_client_message(msg)?;
+                        match parsed {
+                            ClientMessage::Auth { .. } => {}
+                            ClientMessage::Update { count } => {
+                                set_count(&state, &args.data_dir, &client_name, count).await?;
+                                broadcast_except(
+                                    &state,
+                                    client_id,
+                                    &ServerMessage::Update {
+                                        name: client_name.clone(),
+                                        count,
+                                    },
+                                )
+                                .await;
+                            }
+                            ClientMessage::RequestAll => {
+                                let snapshot = snapshot_counts(&state).await;
+                                let _ = server_tx.send(OutgoingFrame::App(ServerMessage::All { counts: snapshot }));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -221,7 +264,7 @@ async fn broadcast_except(state: &Arc<State>, sender_id: u64, msg: &ServerMessag
     };
     for client in clients {
         if client.id != sender_id {
-            let _ = client.tx.send(msg.clone());
+            let _ = client.tx.send(OutgoingFrame::App(msg.clone()));
         }
     }
 }
