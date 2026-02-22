@@ -1,82 +1,99 @@
 # CounterSouls
 
-Small Rust workspace for synchronizing "death counter" values across clients over WebSockets.
+CounterSouls keeps death counters synced between multiple people.
 
-## Workspace layout
+Use case: one host runs the server, and each player runs the client. Everyone's counter stays updated automatically.
 
-- `countersouls-protocol`: shared serde message types used by client and server
-- `countersouls-server`: WebSocket server that stores per-player counters
-- `countersouls-client`: desktop GUI client that reads a local input count file and syncs with server
-- `countersouls-server-gui`: desktop GUI to configure and launch `countersouls-server`
+## Download
 
-## Requirements
+Get the apps from the GitHub Releases page:
+https://github.com/retrontology/countersouls/releases
 
-- Rust toolchain (`cargo`, stable)
+Latest release:
+https://github.com/retrontology/countersouls/releases/latest
 
-## Build
+You only need the GUI apps for normal setup:
 
-```bash
-cargo build
-```
+- **Host PC**: `countersouls-server-gui`
+- **Each player PC** (including the host player if they are also playing): `countersouls-client`
 
-## Run
+## Quick Start
 
-### 1) Start the server
+Only one host app (server) should be running for the group.
+Every player still needs their own client app, including the person hosting if they are also playing on that same PC.
 
-```bash
-cargo run -p countersouls-server -- \
-  --password "change-me" \
-  --bind "0.0.0.0:3721" \
-  --data-dir "./deaths-server/"
-```
+### 1) Host: start the server
 
-Server options:
+Use **Server GUI** (`countersouls-server-gui`) and set:
 
-- `--password` (required): shared secret clients must provide
-- `--bind` (optional, default: `0.0.0.0:3721`)
-- `--data-dir` (optional, default: `./deaths-server/`)
+- **Password**: shared secret (everyone must use the same one)
+- **Bind**: usually `0.0.0.0:3721`
+- **Data Dir**: folder for saved counters
 
-### 2) Start a client
+Then click **Start Server**.
 
-```bash
-cargo run -p countersouls-client
-```
+If players are connecting from outside your home network, set up port forwarding on your router.
+Default port is **3721** (forward TCP `3721` to the host PC running the server).
 
-In the client UI, fill in:
+### 2) Each player: start the client
 
-- `name`: unique player name
-- `input_file`: local file that contains a single integer on the first line
-- `server_addr`: host:port or full `ws://` URL (default `127.0.0.1:3721`)
-- `password`: same value passed to server `--password`
-- `output_dir`: where other players' counters are written (default `./deaths/`)
+Open **Client GUI** (`countersouls-client`) and fill in:
+
+- **Name**: your unique name (example: `nina`)
+- **Input File**: text file with your death count (single number on first line, like `12`)
+- **Server Address**: host IP + port (example: `192.168.1.10:3721`)
+- **Password**: same password as server
+- **Output Dir**: folder where other players' counters are written
 
 Click **Save Config**, then **Connect**.
 
-### 3) (Optional) Run server with GUI launcher
+If it connects successfully, your counter and everyone else's counters will sync.
 
-```bash
-cargo run -p countersouls-server-gui
+## How to set up the input file (important)
+
+This is designed to work with the **Death Counter for OBS** mod for Elden Ring:
+https://www.nexusmods.com/eldenring/mods/2989
+
+Set your `Input File` to the death count file that mod writes, or to any plain text file in the same format.
+That file is expected to be updated automatically by the mod.
+
+- First line must be only a number
+- Example valid file content:
+
+```text
+27
 ```
 
-The server GUI writes config to the OS app config directory and launches the `countersouls-server` binary with those values.
+## Show counters in OBS
 
-## Protocol summary
+After CounterSouls is connected, set up each counter in OBS:
+The counter files are in the folder you selected as `Output Dir` in the client GUI.
 
-Client messages:
+1. Create **Text (GDI+)** in your OBS scene.
+2. In **Text (GDI+) Properties**, enable **Read from file** and select the counter file (for example `bob.txt`).
 
-- `auth { password, name }`
-- `update { count }`
-- `request_all`
+Repeat this for each counter you want on screen, using the matching file for that counter.
 
-Server messages:
+## Troubleshooting
 
-- `auth_ok`
-- `auth_error { reason }`
-- `all { counts }`
-- `update { name, count }`
+- **"Auth error"**: password does not match the server
+- **Can't connect**: check server address, port (`3721` by default), and firewall/router settings
+- **No updates**: make sure input file exists and has a valid number on line 1
+- **Counters look shared or jump around**: two clients are using the same `Name`; use unique names if you want separate counters
 
-## Test
+## Optional: Server CLI
+
+Most users should use the server GUI.
+If you prefer command-line hosting, you can run `countersouls-server` from a terminal instead.
+
+Available flags:
+
+- `--password <VALUE>` (required): shared password clients must use
+- `--bind <HOST:PORT>` (optional, default: `0.0.0.0:3721`)
+- `--data-dir <PATH>` (optional, default: `./deaths-server/`)
+
+Example:
 
 ```bash
-cargo test
+countersouls-server --password "change-me" --bind "0.0.0.0:3721" --data-dir "./deaths-server/"
 ```
