@@ -256,6 +256,9 @@ async fn load_counts(dir: &Path) -> Result<HashMap<String, u64>> {
 }
 
 async fn write_count_file(dir: &Path, name: &str, count: u64) -> Result<()> {
+    fs::create_dir_all(dir)
+        .await
+        .with_context(|| format!("failed to create data dir {}", dir.display()))?;
     let sanitized = sanitize_name(name);
     let path = dir.join(sanitized);
     let data = format!("{count}\n");

@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::PathBuf,
     process::{Child, Command, Stdio},
 };
@@ -59,20 +60,43 @@ impl ServerGuiApp {
             return;
         }
 
-        let mut cmd = Command::new("countersouls-server");
-        cmd.arg("--data-dir")
-            .arg(&self.config.data_dir)
-            .arg("--password")
-            .arg(&self.config.password)
-            .arg("--bind")
-            .arg(&self.config.bind)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        let mut cmd = Command::new(server_binary_name());
+        configure_server_command(&mut cmd, &self.config);
 
         match cmd.spawn() {
             Ok(child) => {
                 self.child = Some(child);
                 self.status = "Running".to_string();
+            }
+            Err(err) if err.kind() == ErrorKind::NotFound => {
+                let Some(fallback_path) = sibling_server_binary_path() else {
+                    self.status = format!(
+                        "Failed to start server: {err}. Not found in PATH, and failed to resolve GUI executable directory"
+                    );
+                    return;
+                };
+                if !fallback_path.exists() {
+                    self.status = format!(
+                        "Failed to start server: {err}. Not found in PATH or next to GUI ({})",
+                        fallback_path.display()
+                    );
+                    return;
+                }
+
+                let mut fallback_cmd = Command::new(&fallback_path);
+                configure_server_command(&mut fallback_cmd, &self.config);
+                match fallback_cmd.spawn() {
+                    Ok(child) => {
+                        self.child = Some(child);
+                        self.status = "Running".to_string();
+                    }
+                    Err(fallback_err) => {
+                        self.status = format!(
+                            "Failed to start server from {}: {fallback_err}",
+                            fallback_path.display()
+                        );
+                    }
+                }
             }
             Err(err) => {
                 self.status = format!("Failed to start server: {err}");
@@ -128,6 +152,31 @@ impl eframe::App for ServerGuiApp {
 
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
+}
+
+fn server_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "countersouls-server.exe"
+    } else {
+        "countersouls-server"
+    }
+}
+
+fn sibling_server_binary_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    Some(dir.join(server_binary_name()))
+}
+
+fn configure_server_command(cmd: &mut Command, config: &ServerConfig) {
+    cmd.arg("--data-dir")
+        .arg(&config.data_dir)
+        .arg("--password")
+        .arg(&config.password)
+        .arg("--bind")
+        .arg(&config.bind)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 }
 
 fn config_path() -> Result<PathBuf> {
