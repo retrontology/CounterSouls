@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::{
     fs,
     io::ErrorKind,
@@ -10,6 +12,12 @@ use directories::ProjectDirs;
 use eframe::egui;
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions::default();
@@ -200,6 +208,8 @@ fn configure_server_command(cmd: &mut Command, config: &ServerConfig) {
         .arg(&config.bind)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
 }
 
 fn config_path() -> Result<PathBuf> {
