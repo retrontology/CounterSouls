@@ -43,8 +43,17 @@ jobs:
         with:
           tool: cross
 
-      - name: Build release binary (cargo)
-        if: matrix.target != 'aarch64-unknown-linux-gnu'
+      - name: Build release binary (cargo, Windows)
+        if: matrix.target != 'aarch64-unknown-linux-gnu' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --release --target ${{ matrix.target }} `
+            -p countersouls-server `
+            -p countersouls-client `
+            -p countersouls-server-gui
+
+      - name: Build release binary (cargo, non-Windows)
+        if: matrix.target != 'aarch64-unknown-linux-gnu' && runner.os != 'Windows'
         run: |
           cargo build --release --target ${{ matrix.target }} \
             -p countersouls-server \
