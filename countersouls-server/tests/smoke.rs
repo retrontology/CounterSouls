@@ -171,17 +171,25 @@ async fn send_client_msg(
 async fn recv_server_msg(
     ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
 ) -> Result<ServerMessage> {
-    let frame = timeout(Duration::from_secs(3), ws.next())
-        .await
-        .context("timeout waiting for server frame")?
-        .ok_or_else(|| anyhow::anyhow!("websocket ended"))??;
+    loop {
+        let frame = timeout(Duration::from_secs(3), ws.next())
+            .await
+            .context("timeout waiting for server frame")?
+            .ok_or_else(|| anyhow::anyhow!("websocket ended"))??;
 
-    let raw = match frame {
-        Message::Text(txt) => txt.to_string(),
-        Message::Binary(bin) => String::from_utf8(bin.to_vec())?,
-        other => bail!("unexpected websocket frame: {other:?}"),
-    };
-    Ok(serde_json::from_str::<ServerMessage>(&raw)?)
+        let raw = match frame {
+            Message::Text(txt) => txt.to_string(),
+            Message::Binary(bin) => String::from_utf8(bin.to_vec())?,
+            Message::Ping(payload) => {
+                ws.send(Message::Pong(payload)).await?;
+                continue;
+            }
+            Message::Pong(_) => continue,
+            Message::Close(_) => bail!("websocket closed while waiting for server message"),
+            other => bail!("unexpected websocket frame: {other:?}"),
+        };
+        return Ok(serde_json::from_str::<ServerMessage>(&raw)?);
+    }
 }
 
 async fn expect_update_for(

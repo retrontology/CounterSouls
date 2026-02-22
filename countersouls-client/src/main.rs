@@ -361,6 +361,8 @@ async fn run_connection_session(
     cmd_rx: &mut tokio_mpsc::UnboundedReceiver<WorkerCommand>,
     event_tx: &mpsc::Sender<WorkerEvent>,
 ) -> Result<ConnectionSessionEnd> {
+    const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(20);
+
     fs::create_dir_all(&config.output_dir)
         .with_context(|| format!("failed to create output dir {}", config.output_dir))?;
 
@@ -416,6 +418,7 @@ async fn run_connection_session(
     watcher.watch(Path::new(&config.input_file), RecursiveMode::NonRecursive)?;
 
     let mut tick = interval(Duration::from_millis(250));
+    let mut heartbeat_tick = interval(HEARTBEAT_INTERVAL);
     loop {
         tokio::select! {
             maybe_cmd = cmd_rx.recv() => {
@@ -440,6 +443,15 @@ async fn run_connection_session(
                     Some(frame) => frame?,
                     None => return Err(anyhow::anyhow!("server closed websocket connection")),
                 };
+                match frame {
+                    Message::Ping(payload) => {
+                        ws_writer.send(Message::Pong(payload)).await?;
+                        continue;
+                    }
+                    Message::Pong(_) => continue,
+                    Message::Close(_) => return Err(anyhow::anyhow!("connection closed")),
+                    _ => {}
+                }
                 match parse_server_message(frame)? {
                     ServerMessage::AuthOk => {}
                     ServerMessage::AuthError { reason } => return Err(anyhow::anyhow!("auth error: {reason}")),
@@ -480,6 +492,9 @@ async fn run_connection_session(
                     let _ = event_tx.send(WorkerEvent::OwnCount(count));
                     send_client_message(&mut ws_writer, &ClientMessage::Update { count }).await?;
                 }
+            }
+            _ = heartbeat_tick.tick() => {
+                ws_writer.send(Message::Ping(Vec::new().into())).await?;
             }
         }
     }

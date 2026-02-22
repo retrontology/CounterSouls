@@ -81,6 +81,11 @@ Repeat this for each counter you want on screen, using the matching file for tha
 - **No updates**: make sure input file exists and has a valid number on line 1
 - **Counters look shared or jump around**: two clients are using the same `Name`; use unique names if you want separate counters
 
+## Connection keepalive
+
+CounterSouls sends WebSocket ping heartbeats every 20 seconds from both clients and server.
+This helps keep otherwise idle connections alive through common firewall/NAT/load-balancer idle timeouts.
+
 ## Optional: Server CLI
 
 Most users should use the server GUI.
