@@ -73,8 +73,8 @@ async fn websocket_smoke_test() -> Result<()> {
 
     // Give the server a brief moment to flush final writes.
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(read_first_line(&data_dir.join("alice"))?, "9");
-    assert_eq!(read_first_line(&data_dir.join("bob"))?, "7");
+    assert_eq!(read_first_line(&data_dir.join("alice.txt"))?, "9");
+    assert_eq!(read_first_line(&data_dir.join("bob.txt"))?, "7");
 
     let _ = fs::remove_dir_all(data_dir);
     Ok(())

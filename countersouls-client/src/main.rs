@@ -403,7 +403,7 @@ fn read_single_line_count(path: &Path) -> Result<u64> {
 
 fn write_count_file(dir: &Path, name: &str, count: u64) -> Result<()> {
     fs::create_dir_all(dir)?;
-    let file_name = sanitize_name(name);
+    let file_name = format!("{}.txt", sanitize_name(name));
     let path = dir.join(file_name);
     fs::write(path, format!("{count}\n"))?;
     Ok(())
