@@ -11,6 +11,7 @@ use directories::ProjectDirs;
 use eframe::egui;
 use futures_util::{SinkExt, StreamExt};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc as tokio_mpsc, time::interval};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -127,6 +128,18 @@ impl ClientApp {
             let _ = tx.send(WorkerCommand::Refresh);
         }
     }
+
+    fn browse_input_file(&mut self) {
+        if let Some(path) = FileDialog::new().pick_file() {
+            self.config.input_file = path.display().to_string();
+        }
+    }
+
+    fn browse_output_dir(&mut self) {
+        if let Some(path) = FileDialog::new().pick_folder() {
+            self.config.output_dir = path.display().to_string();
+        }
+    }
 }
 
 impl Drop for ClientApp {
@@ -160,13 +173,23 @@ impl eframe::App for ClientApp {
             ui.label("Name");
             ui.text_edit_singleline(&mut self.config.name);
             ui.label("Death count input file (read-only watched file)");
-            ui.text_edit_singleline(&mut self.config.input_file);
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.config.input_file);
+                if ui.button("Browse...").clicked() {
+                    self.browse_input_file();
+                }
+            });
             ui.label("Server address and port");
             ui.text_edit_singleline(&mut self.config.server_addr);
             ui.label("Password");
             ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
             ui.label("Directory for other clients' death files");
-            ui.text_edit_singleline(&mut self.config.output_dir);
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.config.output_dir);
+                if ui.button("Browse...").clicked() {
+                    self.browse_output_dir();
+                }
+            });
 
             ui.horizontal(|ui| {
                 if ui.button("Save Config").clicked() {
