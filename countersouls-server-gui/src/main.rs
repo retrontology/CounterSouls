@@ -8,6 +8,7 @@ use std::{
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use eframe::egui;
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 
 fn main() -> eframe::Result<()> {
@@ -110,6 +111,12 @@ impl ServerGuiApp {
         }
         self.status = "Stopped".to_string();
     }
+
+    fn browse_data_dir(&mut self) {
+        if let Some(path) = FileDialog::new().pick_folder() {
+            self.config.data_dir = path.display().to_string();
+        }
+    }
 }
 
 impl Drop for ServerGuiApp {
@@ -126,7 +133,12 @@ impl eframe::App for ServerGuiApp {
             ui.separator();
 
             ui.label("Data directory");
-            ui.text_edit_singleline(&mut self.config.data_dir);
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut self.config.data_dir);
+                if ui.button("Browse...").clicked() {
+                    self.browse_data_dir();
+                }
+            });
             ui.label("Password");
             ui.add(egui::TextEdit::singleline(&mut self.config.password).password(true));
             ui.label("Bind address and port");
